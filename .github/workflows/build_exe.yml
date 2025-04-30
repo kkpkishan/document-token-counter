@@ -27,9 +27,13 @@ jobs:
     - name: Build executable
       run: |
         $site_packages = python -c "import site; print(site.getsitepackages()[0])"
-        $pyinstaller_command = "pyinstaller --onefile --hidden-import tiktoken_ext.openai_public --hidden-import tiktoken_ext.google_cloud --hidden-import tiktoken_ext.anthropic_public"
+        $pyinstaller_command = "pyinstaller --onefile --collect-all numpy --collect-all pandas --collect-all PyPDF2 --collect-all docx --collect-all pptx --collect-all openpyxl --collect-all xlrd --collect-all win32com --collect-all tiktoken"
         
-        $directories = @("tiktoken_ext", "PyPDF2", "docx", "pptx", "pandas", "openpyxl", "xlrd", "win32com", "pythoncom", "tqdm")
+        $pyinstaller_command += " --hidden-import numpy --hidden-import pandas --hidden-import PyPDF2 --hidden-import docx --hidden-import pptx --hidden-import openpyxl --hidden-import xlrd --hidden-import win32com --hidden-import tiktoken"
+        
+        $pyinstaller_command += " --hidden-import tiktoken_ext.openai_public --hidden-import tiktoken_ext.google_cloud --hidden-import tiktoken_ext.anthropic_public"
+        
+        $directories = @("numpy", "pandas", "PyPDF2", "docx", "pptx", "openpyxl", "xlrd", "win32com", "tiktoken", "tqdm")
         foreach ($dir in $directories) {
           if (Test-Path "$site_packages\$dir") {
             $pyinstaller_command += " --add-data `"$site_packages\$dir;$dir`""
