@@ -11,10 +11,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: '3.9'
 
@@ -28,7 +28,7 @@ jobs:
         pyinstaller --onefile --hidden-import tiktoken_ext.openai_public --hidden-import tiktoken_ext.google_cloud --hidden-import tiktoken_ext.anthropic_public --add-data "venv/Lib/site-packages/tiktoken_ext;tiktoken_ext" --add-data "venv/Lib/site-packages/PyPDF2;PyPDF2" --add-data "venv/Lib/site-packages/docx;docx" --add-data "venv/Lib/site-packages/pptx;pptx" --add-data "venv/Lib/site-packages/pandas;pandas" --add-data "venv/Lib/site-packages/openpyxl;openpyxl" token_counter.py
 
     - name: Upload executable
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: token_counter
         path: dist/token_counter.exe
