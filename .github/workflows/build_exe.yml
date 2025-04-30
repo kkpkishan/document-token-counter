@@ -29,7 +29,7 @@ jobs:
         $site_packages = python -c "import site; print(site.getsitepackages()[0])"
         $pyinstaller_command = "pyinstaller --onefile --hidden-import tiktoken_ext.openai_public --hidden-import tiktoken_ext.google_cloud --hidden-import tiktoken_ext.anthropic_public"
         
-        $directories = @("tiktoken_ext", "PyPDF2", "docx", "pptx", "pandas", "openpyxl")
+        $directories = @("tiktoken_ext", "PyPDF2", "docx", "pptx", "pandas", "openpyxl", "xlrd", "win32com", "pythoncom", "tqdm")
         foreach ($dir in $directories) {
           if (Test-Path "$site_packages\$dir") {
             $pyinstaller_command += " --add-data `"$site_packages\$dir;$dir`""
