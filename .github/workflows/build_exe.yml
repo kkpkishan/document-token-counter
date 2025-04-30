@@ -56,13 +56,14 @@ jobs:
             version[2] = parseInt(version[2]) + 1;
             const newVersion = 'v' + version.join('.');
             console.log(`New version: ${newVersion}`);
-            return newVersion;
+            core.setOutput('new_version', newVersion);
           } catch (error) {
             if (error.status === 404) {
               console.log('No previous release found. Starting with v1.0.0');
-              return 'v1.0.0';
+              core.setOutput('new_version', 'v1.0.0');
+            } else {
+              throw error;
             }
-            throw error;
           }
 
     - name: Create Release
@@ -71,8 +72,8 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ github.ref_type == 'tag' && github.ref_name || steps.get_latest_release.outputs.result }}
-        release_name: Release ${{ github.ref_type == 'tag' && github.ref_name || steps.get_latest_release.outputs.result }}
+        tag_name: ${{ github.ref_type == 'tag' && github.ref_name || steps.get_latest_release.outputs.new_version }}
+        release_name: Release ${{ github.ref_type == 'tag' && github.ref_name || steps.get_latest_release.outputs.new_version }}
         draft: false
         prerelease: false
 
