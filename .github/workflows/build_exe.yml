@@ -1,10 +1,11 @@
-name: Build and Upload Executable
+name: Build and Release Executable
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    branches:
+      - main  # or your default branch name
+    tags:
+      - 'v*'  # Trigger on version tags
 
 jobs:
   build:
@@ -40,8 +41,47 @@ jobs:
         $pyinstaller_command += " token_counter.py"
         Invoke-Expression $pyinstaller_command
 
-    - name: Upload executable
-      uses: actions/upload-artifact@v4
+    - name: Get latest release
+      id: get_latest_release
+      uses: actions/github-script@v6
       with:
-        name: token_counter
-        path: dist/token_counter.exe
+        github-token: ${{secrets.GITHUB_TOKEN}}
+        script: |
+          try {
+            const latestRelease = await github.rest.repos.getLatestRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            const version = latestRelease.data.tag_name.replace('v', '').split('.');
+            version[2] = parseInt(version[2]) + 1;
+            const newVersion = 'v' + version.join('.');
+            console.log(`New version: ${newVersion}`);
+            return newVersion;
+          } catch (error) {
+            if (error.status === 404) {
+              console.log('No previous release found. Starting with v1.0.0');
+              return 'v1.0.0';
+            }
+            throw error;
+          }
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_type == 'tag' && github.ref_name || steps.get_latest_release.outputs.result }}
+        release_name: Release ${{ github.ref_type == 'tag' && github.ref_name || steps.get_latest_release.outputs.result }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/token_counter.exe
+        asset_name: token_counter.exe
+        asset_content_type: application/octet-stream
