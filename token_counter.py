@@ -129,13 +129,12 @@ def process_folder(folder_path: str) -> Tuple[List[Dict[str, str]], int, int]:
         for file in tqdm(files, desc=f"Processing {os.path.basename(root)}", unit="file"):
             file_path = os.path.join(root, file)
             token_count = process_file(file_path)
-            if token_count > 0:
-                total_tokens += token_count
-                total_files += 1
-                results.append({
-                    'file_path': file_path,
-                    'token_count': token_count
-                })
+            total_tokens += token_count
+            total_files += 1
+            results.append({
+                'file_path': file_path,
+                'token_count': token_count
+            })
 
     return results, total_tokens, total_files
 
