@@ -8,6 +8,7 @@ from pptx import Presentation
 import pandas as pd
 import tiktoken
 import xlrd
+from xlrd.biffh import XLRDError
 import logging
 import win32com.client
 import pythoncom
@@ -64,6 +65,25 @@ def process_txt(file_path: str) -> str:
         logger.error(f"Error processing TXT file {file_path}: {str(e)}")
         return ""
 
+def process_ppt(file_path: str) -> str:
+    try:
+        pythoncom.CoInitialize()
+        powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+        presentation = powerpoint.Presentations.Open(file_path, ReadOnly=True)
+        text = ""
+        for slide in presentation.Slides:
+            for shape in slide.Shapes:
+                if shape.HasTextFrame:
+                    text += shape.TextFrame.TextRange.Text + "\n"
+        presentation.Close()
+        powerpoint.Quit()
+        return text
+    except Exception as e:
+        logger.error(f"Error processing PPT file {file_path}: {str(e)}")
+        return ""
+    finally:
+        pythoncom.CoUninitialize()
+
 def process_pptx(file_path: str) -> str:
     try:
         prs = Presentation(file_path)
@@ -75,10 +95,15 @@ def process_pptx(file_path: str) -> str:
 def process_excel(file_path: str) -> str:
     try:
         if file_path.endswith('.xls'):
-            workbook = xlrd.open_workbook(file_path)
-            sheets = [pd.DataFrame([[sheet.cell_value(r, c) for c in range(sheet.ncols)] for r in range(sheet.nrows)]) 
-                      for sheet in workbook.sheets()]
-            df = pd.concat(sheets)
+            workbook = xlrd.open_workbook(file_path, logfile=open(os.devnull, 'w'))
+            sheets = []
+            for sheet in workbook.sheets():
+                try:
+                    df = pd.DataFrame([[sheet.cell_value(r, c) for c in range(sheet.ncols)] for r in range(sheet.nrows)])
+                    sheets.append(df)
+                except XLRDError as e:
+                    logger.warning(f"Error processing sheet in {file_path}: {str(e)}")
+            df = pd.concat(sheets) if sheets else pd.DataFrame()
         else:
             df = pd.read_excel(file_path)
         return df.to_string()
@@ -100,7 +125,7 @@ def process_file(file_path: str) -> int:
         '.doc': process_doc,
         '.docx': process_docx,
         '.txt': process_txt,
-        '.ppt': process_pptx,
+        '.ppt': process_ppt,
         '.pptx': process_pptx,
         '.xls': process_excel,
         '.xlsx': process_excel,
