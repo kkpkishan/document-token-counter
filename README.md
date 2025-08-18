@@ -35,7 +35,11 @@ pip install -r requirements.txt
 
 Run the script from the command line:
 
-python token_counter.py /path/to/folder1 /path/to/folder2 -o /path/to/output.csv
+
+python token_counter.py "D:\Docs" "D:\More" -o report.csv --workers 8 --quiet
+# optional:
+#   --model gpt-4o  OR  --encoding cl100k_base
+#   --excel-max-rows 50000  --csv-max-rows 100000
 
 
 - You can specify multiple input folders.

@@ -3,90 +3,117 @@ name: Build and Release Executable
 on:
   push:
     branches:
-      - main  # or your default branch name
+      - main
     tags:
-      - 'v*'  # Trigger on version tags
+      - 'v*'
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
-    - name: Build executable
-      run: |
-        $site_packages = python -c "import site; print(site.getsitepackages()[0])"
-        $pyinstaller_command = "pyinstaller --onefile --collect-all numpy --collect-all pandas --collect-all PyPDF2 --collect-all docx --collect-all pptx --collect-all openpyxl --collect-all xlrd --collect-all win32com --collect-all tiktoken"
-        
-        $pyinstaller_command += " --hidden-import numpy --hidden-import pandas --hidden-import PyPDF2 --hidden-import docx --hidden-import pptx --hidden-import openpyxl --hidden-import xlrd --hidden-import win32com --hidden-import tiktoken"
-        
-        $pyinstaller_command += " --hidden-import tiktoken_ext.openai_public --hidden-import tiktoken_ext.google_cloud --hidden-import tiktoken_ext.anthropic_public"
-        
-        $directories = @("numpy", "pandas", "PyPDF2", "docx", "pptx", "openpyxl", "xlrd", "win32com", "tiktoken", "tqdm")
-        foreach ($dir in $directories) {
-          if (Test-Path "$site_packages\$dir") {
-            $pyinstaller_command += " --add-data `"$site_packages\$dir;$dir`""
-          } else {
-            Write-Host "Directory $dir not found in site-packages"
-          }
-        }
-        
-        $pyinstaller_command += " token_counter.py"
-        Invoke-Expression $pyinstaller_command
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          pip install -r requirements.txt
+          pip freeze
 
-    - name: Get latest release
-      id: get_latest_release
-      uses: actions/github-script@v6
-      with:
-        github-token: ${{secrets.GITHUB_TOKEN}}
-        script: |
-          try {
-            const latestRelease = await github.rest.repos.getLatestRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo
-            });
-            const version = latestRelease.data.tag_name.replace('v', '').split('.');
-            version[2] = parseInt(version[2]) + 1;
-            const newVersion = 'v' + version.join('.');
-            console.log(`New version: ${newVersion}`);
-            core.setOutput('new_version', newVersion);
-          } catch (error) {
-            if (error.status === 404) {
-              console.log('No previous release found. Starting with v1.0.0');
-              core.setOutput('new_version', 'v1.0.0');
+      - name: Build executable with PyInstaller
+        shell: pwsh
+        run: |
+          $site_packages = python -c "import site,sys; print(next(p for p in site.getsitepackages() if 'site-packages' in p))"
+
+          # NOTE: using pypdf (not PyPDF2) and including win32com unconditionally
+          $pyi  = "pyinstaller --onefile --name token_counter"
+          $pyi += " --collect-all numpy --collect-all pandas --collect-all pypdf --collect-all docx --collect-all pptx --collect-all openpyxl --collect-all xlrd --collect-all tiktoken"
+          $pyi += " --collect-all win32com --collect-all win32"
+
+          $pyi += " --hidden-import numpy --hidden-import pandas --hidden-import pypdf --hidden-import docx --hidden-import pptx --hidden-import openpyxl --hidden-import xlrd --hidden-import tiktoken"
+          $pyi += " --hidden-import win32com --hidden-import pythoncom"
+
+          $pyi += " --hidden-import tiktoken_ext.openai_public --hidden-import tiktoken_ext.google_cloud --hidden-import tiktoken_ext.anthropic_public"
+
+          # add-data (defensive); ok if some don’t exist
+          $directories = @("numpy","pandas","pypdf","docx","pptx","openpyxl","xlrd","win32com","win32","tiktoken","tqdm")
+          foreach ($dir in $directories) {
+            if (Test-Path "$site_packages\$dir") {
+              $pyi += " --add-data `"$site_packages\$dir;$dir`""
             } else {
-              throw error;
+              Write-Host "Directory $dir not found in site-packages"
             }
           }
 
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref_type == 'tag' && github.ref_name || steps.get_latest_release.outputs.new_version }}
-        release_name: Release ${{ github.ref_type == 'tag' && github.ref_name || steps.get_latest_release.outputs.new_version }}
-        draft: false
-        prerelease: false
+          $pyi += " token_counter.py"
+          Write-Host "Running: $pyi"
+          Invoke-Expression $pyi
 
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./dist/token_counter.exe
-        asset_name: token_counter.exe
-        asset_content_type: application/octet-stream
+          if (-not (Test-Path ".\dist\token_counter.exe")) {
+            Write-Error "Build failed: dist\token_counter.exe not found."
+            exit 1
+          }
+
+      - name: Upload build artifact (for workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: token_counter.exe
+          path: dist/token_counter.exe
+
+      - name: Compute next version if not building from tag
+        id: version
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            if (context.ref.startsWith('refs/tags/')) {
+              const tag = context.ref.replace('refs/tags/', '');
+              core.setOutput('tag', tag);
+              return;
+            }
+            try {
+              const latest = await github.rest.repos.getLatestRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              });
+              const parts = latest.data.tag_name.replace(/^v/, '').split('.');
+              parts[2] = String(parseInt(parts[2] || '0') + 1);
+              const next = 'v' + parts.join('.');
+              core.setOutput('tag', next);
+            } catch (err) {
+              if (err.status === 404) {
+                core.setOutput('tag', 'v1.0.0');
+              } else {
+                throw err;
+              }
+            }
+
+      - name: Create GitHub Release & Upload EXE
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          files: |
+            dist/token_counter.exe
+          generate_release_notes: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
